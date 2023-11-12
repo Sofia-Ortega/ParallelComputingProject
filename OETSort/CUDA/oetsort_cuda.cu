@@ -1,127 +1,116 @@
-/**
- * -------------------- SOURCE -----------------------------------
- * Code: https://github.com/Kshitij421/Odd-Even-Sort-using-Cuda-/blob/master/oddeven.cu
- * Author: @Kshitij421
- * Date: March 16, 2016 
- * 
-*/
+#include <stdio.h>
+#include <stdlib.h>
 
-#include<stdio.h>
-#include<cuda.h>
+__global__ void oddEvenSort(int* arr, int n) {
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-#include <caliper/cali.h>
-#include <caliper/cali-manager.h>
-
-	const char* main = "main";
-	const char * genValuesTime = "data_init";
-	const char * correctness = "correctness_check";
-	const char * compSmall = "comp_small";
-	const char * compLarge = "comp_large";
-	const char * comm = "comm";
-	const char * commSmall = "comm_small";
-	const char * commLarge = "comm_large_h2d";
-	const char * commLarge = "comm_large_d2h";
-
-__global__ void oddeven(int* x,int I,int n)
-{
-	int id=blockIdx.x;
-	if(I==0 && ((id*2+1)< n)){
-		if(x[id*2]>x[id*2+1]){
-			int X=x[id*2];
-			x[id*2]=x[id*2+1];
-			x[id*2+1]=X;
-		}
-	}
-	if(I==1 && ((id*2+2)< n)){
-		if(x[id*2+1]>x[id*2+2]){
-			int X=x[id*2+1];
-			x[id*2+1]=x[id*2+2];
-			x[id*2+2]=X;
-		}
-	}
+    for (int phase = 0; phase < n; phase++) {
+        if (phase % 2 == 0) { // Even phase
+            if (tid % 2 == 0 && tid < n - 1) {
+                if (arr[tid] > arr[tid + 1]) {
+                    int temp = arr[tid];
+                    arr[tid] = arr[tid + 1];
+                    arr[tid + 1] = temp;
+                }
+            }
+        } else { // Odd phase
+            if (tid % 2 != 0 && tid < n - 1) {
+                if (arr[tid] > arr[tid + 1]) {
+                    int temp = arr[tid];
+                    arr[tid] = arr[tid + 1];
+                    arr[tid + 1] = temp;
+                }
+            }
+        }
+        __syncthreads();
+    }
 }
 
-int main()
-{
+int main(int argc, char** argv) {
+    // argv:
+    // 0            1           2                3
+    // oetsort_cuda num_threads num_vals_to_sort [optional: printArray]
+
+    if(argc != 3 && argc != 4) {
+        printf("Incorrect argumant usage\n");
+        printf("oetsort_cuda num_threads num_vals_to_sort [optional: print_array]\n");
+        return -1;
+    }
+
+    int num_threads = atoi(argv[1]);
+    int n = atoi(argv[2]); // Size of the array
+    bool printArray = false;
+
+    if(argc == 4) {
+        printArray = atoi(argv[3]);
+    }
+
+    printf("Sorting %i values with %i threads\n", n, num_threads);
 
 
-	CALI_CXX_MARK_FUNCTION;
-	CALI_MARK_BEGIN("main");
+    int* h_array = (int*)malloc(n * sizeof(int));
+    int* d_array;
 
-	CALI_MARK_BEGIN("data_init");
+    // intialize local array
+    for (int i = 0; i < n; i++) {
+        h_array[i] = rand() % 100;
+    }
 
-	int a[100],n,c[100],i;
-	int *d;
+    if(printArray) {
+        printf("unsorted array: \n");
+        for (int i = 0; i < n; i++) {
+            printf("%i: ", i);
+            printf("%d\n", h_array[i]);
+        }
+        printf("\n");
+    }
 
-	printf("Enter how many elements of first array:");
-	scanf("%d",&n);
-	
-	// geberate random values
-	for(i=0; i<n; i++)
-	{
-		a[i] = rand()%100;
-	}
+    // Allocate memory on the GPU
+    cudaMalloc((void**)&d_array, n * sizeof(int));
 
-	CALI_MARK_END("data_int");
+    // Copy data from host to device
+    cudaMemcpy(d_array, h_array, n * sizeof(int), cudaMemcpyHostToDevice);
 
-	CALI_MARK_BEGIN("comm_small");
+    // Launch the CUDA kernel
+    int numBlocks = n  / num_threads;
+    if(n % num_threads != 0 ) 
+        numBlocks++;
 
-	cudaMalloc((void**)&d, n*sizeof(int));
 
-	CALI_MARK_END("comm_small");
+    oddEvenSort<<<numBlocks, num_threads>>>(d_array, n);
 
-	CALI_MARK_BEGIN("comm_large_h2d");
+    // Copy the sorted data back to the host
+    cudaMemcpy(h_array, d_array, n * sizeof(int), cudaMemcpyDeviceToHost);
 
-	cudaMemcpy(d,a,n*sizeof(int),cudaMemcpyHostToDevice);
+    // check if array is sorted
+    bool isSorted = true;
+    for(int i = 1; i < n; i++) {
+        if(h_array[i - 1] > h_array[i]) {
+            printf("[ERROR] [%i, %i]: %i, %i Incorrect values\n", i - 1, i, h_array[i - 1], h_array[i]);
+            isSorted = false;
+            break;
+        }
+    }
 
-	CALI_MARK_END("comm_large_h2d");
+    if(isSorted) {
+        printf("Great Success! It is Sorted :D \n");
+    } else {
+        printf("Something went terribly wrong...\n");
+    }
 
-	CALI_MARK_BEGIN("comp_large");
+    // Print the sorted array
+    if(printArray) {
+        printf("Supposeldy Sorted Array: o.o \n");
+        for (int i = 0; i < n; i++) {
+            printf("%i: ", i);
+            printf("%d\n", h_array[i]);
+        }
+        printf("\n");
+    }
 
-	for(i=0;i<n;i++){
-		//int size=n/2;
-		CALI_MARK_BEGIN("comp_small");
-		oddeven<<<n/2,1>>>(d,i%2,n);
-		CALI_MARK_END("comp_small")
-	}
-	printf("\n");
+    // Cleanup
+    cudaFree(d_array);
+    free(h_array);
 
-	CALI_MARK_END("comp_large");
-
-	CALI_MARK_BEGIN("comm_large_d2h");
-
-	cudaMemcpy(c,d,n*sizeof(int), cudaMemcpyDeviceToHost);
-
-	CALI_MARK_END("comm_large_d2h");
-
-	// check to see if the array is sorted
-	CALI_MARK_BEGIN("correctness_check");
-
-	int sorted = 1;
-	for(i=0; i<n-1; i++)
-	{
-		if(c[i]>c[i+1])
-		{
-			sorted = 0;
-			break;
-		}
-	}
-
-	if(sorted)
-		printf("Array is sorted\n");
-	else
-		printf("Array is not sorted\n");
-
-	CALI_MARK_END("correctness_check");
-
-	printf("Sorted Array is:\t");
-	for(i=0; i<n; i++)
-	{
-		printf("%d\t",c[i]);
-	}
-
-	cudaFree(d);
-
-	CALI_MARK_END("main");
-	return 0;
+    return 0;
 }
