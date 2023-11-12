@@ -1,116 +1,77 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <iostream>
+#include <cstdlib>
 
-__global__ void oddEvenSort(int* arr, int n) {
+__global__ void oddevenSort(int* array, int size) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int phase, tmp;
 
-    for (int phase = 0; phase < n; phase++) {
+    for (phase = 0; phase < size; phase++) {
         if (phase % 2 == 0) { // Even phase
-            if (tid % 2 == 0 && tid < n - 1) {
-                if (arr[tid] > arr[tid + 1]) {
-                    int temp = arr[tid];
-                    arr[tid] = arr[tid + 1];
-                    arr[tid + 1] = temp;
+            if (tid % 2 == 0 && tid < size - 1) {
+                if (array[tid] > array[tid + 1]) {
+                    // Swap elements
+                    tmp = array[tid];
+                    array[tid] = array[tid + 1];
+                    array[tid + 1] = tmp;
                 }
             }
         } else { // Odd phase
-            if (tid % 2 != 0 && tid < n - 1) {
-                if (arr[tid] > arr[tid + 1]) {
-                    int temp = arr[tid];
-                    arr[tid] = arr[tid + 1];
-                    arr[tid + 1] = temp;
+            if (tid % 2 == 1 && tid < size - 1) {
+                if (array[tid] > array[tid + 1]) {
+                    // Swap elements
+                    tmp = array[tid];
+                    array[tid] = array[tid + 1];
+                    array[tid + 1] = tmp;
                 }
             }
         }
-        __syncthreads();
+        __syncthreads(); // Synchronize threads within the block
     }
 }
 
-int main(int argc, char** argv) {
-    // argv:
-    // 0            1           2                3
-    // oetsort_cuda num_threads num_vals_to_sort [optional: printArray]
-
-    if(argc != 3 && argc != 4) {
-        printf("Incorrect argumant usage\n");
-        printf("oetsort_cuda num_threads num_vals_to_sort [optional: print_array]\n");
-        return -1;
-    }
-
-    int num_threads = atoi(argv[1]);
-    int n = atoi(argv[2]); // Size of the array
-    bool printArray = false;
-
-    if(argc == 4) {
-        printArray = atoi(argv[3]);
-    }
-
-    printf("Sorting %i values with %i threads\n", n, num_threads);
-
-
-    int* h_array = (int*)malloc(n * sizeof(int));
+int main() {
+    int arraySize = 1024;
+    int* h_array = new int[arraySize];
     int* d_array;
 
-    // intialize local array
-    for (int i = 0; i < n; i++) {
-        h_array[i] = rand() % 100;
+    for (int i = 0; i < arraySize; i++) {
+        h_array[i] = rand() % 1000;
     }
 
-    if(printArray) {
-        printf("unsorted array: \n");
-        for (int i = 0; i < n; i++) {
-            printf("%i: ", i);
-            printf("%d\n", h_array[i]);
-        }
-        printf("\n");
+    cudaMalloc(&d_array, sizeof(int) * arraySize);
+    cudaMemcpy(d_array, h_array, sizeof(int) * arraySize, cudaMemcpyHostToDevice);
+
+    int numBlocks = 4; // Choose the number of blocks as needed
+    int threadsPerBlock = arraySize / numBlocks;
+
+    oddevenSort<<<numBlocks, threadsPerBlock>>>(d_array, arraySize);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(h_array, d_array, sizeof(int) * arraySize, cudaMemcpyDeviceToHost);
+
+    // Print sorted array
+    printf("Sorted:\n");
+    for (int i = 0; i < arraySize; i++) {
+        std::cout << h_array[i] << " ";
     }
+    std::cout << std::endl;
 
-    // Allocate memory on the GPU
-    cudaMalloc((void**)&d_array, n * sizeof(int));
-
-    // Copy data from host to device
-    cudaMemcpy(d_array, h_array, n * sizeof(int), cudaMemcpyHostToDevice);
-
-    // Launch the CUDA kernel
-    int numBlocks = n  / num_threads;
-    if(n % num_threads != 0 ) 
-        numBlocks++;
-
-
-    oddEvenSort<<<numBlocks, num_threads>>>(d_array, n);
-
-    // Copy the sorted data back to the host
-    cudaMemcpy(h_array, d_array, n * sizeof(int), cudaMemcpyDeviceToHost);
-
-    // check if array is sorted
     bool isSorted = true;
-    for(int i = 1; i < n; i++) {
+    for(int i = 1; i < arraySize; i++) {
         if(h_array[i - 1] > h_array[i]) {
-            printf("[ERROR] [%i, %i]: %i, %i Incorrect values\n", i - 1, i, h_array[i - 1], h_array[i]);
+            printf("[FAIL] is not sorted [%i]\n", i);
             isSorted = false;
             break;
         }
     }
 
-    if(isSorted) {
-        printf("Great Success! It is Sorted :D \n");
-    } else {
-        printf("Something went terribly wrong...\n");
-    }
+    if(isSorted)
+        printf("Success!\n");
 
-    // Print the sorted array
-    if(printArray) {
-        printf("Supposeldy Sorted Array: o.o \n");
-        for (int i = 0; i < n; i++) {
-            printf("%i: ", i);
-            printf("%d\n", h_array[i]);
-        }
-        printf("\n");
-    }
 
-    // Cleanup
+
+    delete[] h_array;
     cudaFree(d_array);
-    free(h_array);
 
     return 0;
 }

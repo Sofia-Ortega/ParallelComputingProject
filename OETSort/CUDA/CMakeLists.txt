@@ -5,11 +5,8 @@ project(oetsort LANGUAGES CUDA CXX)
 find_package(caliper REQUIRED)
 find_package(adiak REQUIRED)
 
-set(SOURCE_FILES
-    oetsort_cuda.cu
-    )
 
-add_executable(oetsort_cuda ${SOURCE_FILES})
+add_executable(oetsort_cuda oetsort_cuda.cu)
 
 message(STATUS "CUDA includes : ${CUDA_INCLUDE_DIRS}")
 message(STATUS "Caliper includes : ${caliper_INCLUDE_DIR}")
